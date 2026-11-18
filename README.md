@@ -2,21 +2,60 @@
 
 Material de estudio para *Modelos y Métodos de Optimización* (programación lineal y entera con Gurobi en Python).
 
-## Contenido
+## Archivos
 
-- `guia_gurobi.py`: guía ejecutable con la metodología de modelado, un cheatsheet de la API de `gurobipy`, problemas clásicos, linealizaciones, diagnóstico de modelos infactibles y una sección completa de **clustering**.
+| Archivo | Para qué sirve |
+|---|---|
+| `VRP_MILP_base.py` | Script de clase (VRP). Es la referencia de estilo. |
+| `Clustering_MILP_base.py` | El mismo estilo aplicado a **clustering**. Lee los archivos del profesor, resuelve, imprime los clusters, grafica y guarda un csv. |
+| `guia_gurobi.py` | Guía de estudio: metodología, cheatsheet de la API, problemas clásicos, linealizaciones, diagnóstico y teoría de clustering con cada modelo como función. |
 
-## Uso
+## Instalación
 
 ```bash
 pip install -r requirements.txt
+```
 
+## Clustering_MILP_base.py
+
+Todo lo que se configura está en la sección `CONFIGURACION`, al inicio del archivo.
+
+```python
+ARCHIVO = 'datos_clustering.txt'   # archivo del profesor
+TIPO_DATOS = 'COORDENADAS'         # o 'DISTANCIAS' (matriz n x n)
+METRICA = 'euclidiana'             # 'manhattan', 'cuadrada'
+COLUMNAS_COORD = None              # None = automático; o una lista como [1, 2]
+COL_PESO = None                    # columna con demanda/peso por punto (q[i])
+MODELO = 'CENTROS'                 # 'CENTROS' (p-mediana) o 'PARES'
+OBJETIVO = 'SUMA'                  # 'SUMA' o 'MAX' (minimax)
+K = 3                              # número de clusters
+Q, Q_MIN = None, None              # capacidad máxima / mínima por cluster
+R_MAX, D_MAX = None, None          # radio máximo (CENTROS) / diámetro máximo (PARES)
+```
+
+Formatos de archivo que acepta:
+
+- Texto o csv con `x y`, o `índice x y`, o más columnas. Descarta solas las líneas no numéricas (encabezados, `NODE_COORD_SECTION`, `EOF`).
+- csv de Excel en español (separador `;` y coma decimal).
+- Matriz de distancias cuadrada (`TIPO_DATOS = 'DISTANCIAS'`).
+- Si el archivo no existe, genera puntos de ejemplo para poder probar.
+
+| MODELO | OBJETIVO | Qué resuelve |
+|---|---|---|
+| `CENTROS` | `SUMA` | p-mediana (k-medoids): mínima suma de distancias punto-centro |
+| `CENTROS` | `MAX` | p-centro: mínimo radio máximo |
+| `PARES` | `SUMA` | mínima suma de distancias entre puntos del mismo cluster |
+| `PARES` | `MAX` | mínimo diámetro máximo |
+
+Si el modelo es infactible, el script imprime el conjunto de restricciones en conflicto (IIS).
+
+## guia_gurobi.py
+
+```bash
 python guia_gurobi.py                 # lista los ejemplos
 python guia_gurobi.py todo            # ejecuta todos
 python guia_gurobi.py p_mediana       # ejecuta uno
 ```
-
-## Ejemplos incluidos
 
 | Nombre | Tema |
 |---|---|
@@ -30,12 +69,10 @@ python guia_gurobi.py p_mediana       # ejecuta uno
 | `ruta_corta` | Flujo en redes |
 | `linealizaciones` | abs, minimax, if-then, producto binaria×continua, restricciones generales, multiobjetivo |
 | `infactible` | IIS y status del solver |
-| `p_mediana` | Clustering: k-medoids |
-| `p_mediana_cap` | Clustering con tamaño mínimo y máximo |
-| `p_centro` | Clustering: minimizar el radio máximo |
-| `min_clusters` | Clustering: mínimo de clusters con diámetro máximo |
+| `p_mediana`, `p_mediana_cap`, `p_centro` | Clustering con centros, con capacidades y minimax |
+| `pares` | Clustering por pares, sin centros |
+| `min_clusters` | Mínimo de clusters con diámetro máximo |
 | `asignar_centroides` | Clustering con centros dados |
+| `barrido_k` | Elegir K con el método del codo |
 | `kmeans` | Por qué k-means no es un MIP y qué alternativas hay |
 | `checklist` | Errores comunes y consejos para el examen |
-
-La licencia gratuita de `gurobipy` instalada con pip limita el modelo a 2000 variables y 2000 restricciones lineales.

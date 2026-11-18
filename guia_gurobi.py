@@ -10,9 +10,14 @@ Como usar este archivo
     python guia_gurobi.py p_mediana       -> ejecuta un ejemplo concreto
 
 Cada ejemplo es una funcion independiente (copiar y pegar la que sirva).
-Instalacion:  pip install gurobipy
-(La licencia gratuita de pip limita el tamano: 2000 variables y 2000
-restricciones lineales. Suficiente para los ejemplos de esta guia.)
+Instalacion:  pip install gurobipy      (con licencia de estudiante no hay limite de tamano;
+                                          la version de pip sin licencia limita a 2000 variables)
+
+ARCHIVOS RELACIONADOS
+  VRP_MILP_base.py         script de clase (VRP): la estructura de referencia.
+  Clustering_MILP_base.py  ese mismo estilo aplicado a clustering, listo para
+                           cargar los archivos de datos que entregue el profesor.
+Esta guia usa la nomenclatura de clase: md (modelo), X, Y (binarias), dist, V, K, q, Q.
 
 INDICE
 ------
@@ -31,13 +36,15 @@ INDICE
   PARTE 3. Linealizaciones y restricciones logicas (abs, max, if-then...)
   PARTE 4. Modelo infactible / no acotado: como diagnosticar
   PARTE 5. CLUSTERING con optimizacion
-           5.1 datos y distancias
+           5.1 leer archivos de datos y calcular distancias
            5.2 p-mediana (k-medoids)           <- el mas importante
            5.3 p-mediana con capacidades / clusters balanceados
            5.4 p-centro (minimizar el radio maximo)
-           5.5 minimo numero de clusters con diametro maximo
-           5.6 asignar puntos a centroides dados
-           5.7 que NO es un MIP: k-means
+           5.5 formulacion por pares (sin centros)
+           5.6 minimo numero de clusters con diametro maximo
+           5.7 asignar puntos a centroides dados
+           5.8 elegir K: barrido y metodo del codo
+           5.9 que NO es un MIP: k-means
   PARTE 6. Checklist de errores comunes y consejos para el examen
 """
 
@@ -74,23 +81,23 @@ def plantilla():
     # --- 1-2. Datos ----------------------------------------------------------
     utilidad = {"x": 3, "y": 2}
     # --- Modelo --------------------------------------------------------------
-    m = gp.Model("plantilla")
+    md = gp.Model("plantilla")
     # --- 3. Variables --------------------------------------------------------
     # OJO: por defecto lb=0 y ub=infinito. Para variables libres usar lb=-GRB.INFINITY
-    x = m.addVar(vtype=GRB.CONTINUOUS, lb=0, name="x")
-    y = m.addVar(vtype=GRB.CONTINUOUS, lb=0, name="y")
+    x = md.addVar(vtype=GRB.CONTINUOUS, lb=0, name="x")
+    y = md.addVar(vtype=GRB.CONTINUOUS, lb=0, name="y")
     # --- 4. Objetivo ---------------------------------------------------------
-    m.setObjective(utilidad["x"] * x + utilidad["y"] * y, GRB.MAXIMIZE)
+    md.setObjective(utilidad["x"] * x + utilidad["y"] * y, GRB.MAXIMIZE)
     # --- 5. Restricciones ----------------------------------------------------
-    m.addConstr(x + y <= 4, name="r1")
-    m.addConstr(x + 3 * y <= 6, name="r2")
+    md.addConstr(x + y <= 4, name="r1")
+    md.addConstr(x + 3 * y <= 6, name="r2")
     # --- 6. Resolver ---------------------------------------------------------
-    m.optimize()
-    if m.status == GRB.OPTIMAL:
-        print(f"Objetivo = {m.ObjVal:.2f}")
-        for v in m.getVars():
+    md.optimize()
+    if md.status == GRB.OPTIMAL:
+        print(f"Objetivo = {md.ObjVal:.2f}")
+        for v in md.getVars():
             print(f"  {v.VarName} = {v.X:.2f}")
-    return m
+    return md
 
 
 # =============================================================================
@@ -98,29 +105,29 @@ def plantilla():
 # =============================================================================
 def cheatsheet_api():
     """Recorrido por todo lo que se usa con frecuencia. Ejecutarlo y leerlo."""
-    m = gp.Model("cheatsheet")
+    md = gp.Model("cheatsheet")
 
     # ---------------- Parametros utiles del solver ---------------------------
-    m.Params.OutputFlag = 0      # 0 = silencia el log (1 = lo muestra)
-    # m.Params.TimeLimit = 60    # segundos maximos
-    # m.Params.MIPGap = 0.01     # detener con gap relativo del 1 %
-    # m.Params.Threads = 1
+    md.setParam(GRB.Param.OutputFlag, 0)      # 0 = silencia el log (1 = lo muestra)
+    # md.setParam(GRB.Param.TimeLimit, 60)   # segundos maximos
+    # md.setParam(GRB.Param.MIPGap, 0.01)    # detener con gap relativo del 1 %
+    # md.setParam(GRB.Param.Threads, 1)
 
     # ---------------- Variables ---------------------------------------------
-    a = m.addVar(lb=0, ub=10, obj=0, vtype=GRB.CONTINUOUS, name="a")
-    b = m.addVar(vtype=GRB.INTEGER, name="b")          # entera >= 0
-    c = m.addVar(vtype=GRB.BINARY, name="c")           # 0 / 1
-    libre = m.addVar(lb=-GRB.INFINITY, name="libre")   # puede ser negativa
+    a = md.addVar(lb=0, ub=10, obj=0, vtype=GRB.CONTINUOUS, name="a")
+    b = md.addVar(vtype=GRB.INTEGER, name="b")          # entera >= 0
+    c = md.addVar(vtype=GRB.BINARY, name="c")           # 0 / 1
+    libre = md.addVar(lb=-GRB.INFINITY, name="libre")   # puede ser negativa
 
     # Varias a la vez: devuelve un tupledict indexado
     I = ["p1", "p2", "p3"]
     J = ["t1", "t2"]
-    x = m.addVars(I, vtype=GRB.CONTINUOUS, name="x")          # x["p1"]
-    z = m.addVars(I, J, vtype=GRB.BINARY, name="z")           # z["p1","t2"]
-    # indices numericos: m.addVars(5, 3) -> z[i, j] con i en 0..4, j en 0..2
+    x = md.addVars(I, vtype=GRB.CONTINUOUS, name="x")          # x["p1"]
+    z = md.addVars(I, J, vtype=GRB.BINARY, name="z")           # z["p1","t2"]
+    # indices numericos: md.addVars(5, 3) -> z[i, j] con i en 0..4, j en 0..2
     # Indices irregulares (solo pares validos):
     arcos = gp.tuplelist([("A", "B"), ("B", "C"), ("A", "C")])
-    f = m.addVars(arcos, name="f")
+    f = md.addVars(arcos, name="f")
 
     # ---------------- Sumas --------------------------------------------------
     costo = {"p1": 4, "p2": 5, "p3": 6}
@@ -132,39 +139,39 @@ def cheatsheet_api():
     # f.sum("A", "*") = flujo que sale de A ; f.sum("*", "C") = flujo que entra a C
 
     # ---------------- Restricciones -----------------------------------------
-    m.addConstr(a + b <= 10, name="una_restriccion")
-    m.addConstr(expr1 >= 5, name="demanda")
-    m.addConstr(x["p1"] == 2 * x["p2"])                # igualdad: usar ==
-    m.addConstrs((z.sum(i, "*") <= 1 for i in I), name="max_uno_por_i")   # familia
-    m.addConstrs((x[i] <= 8 * c for i in I), name="enlace")               # big-M
-    m.addConstr(libre >= -3)
+    md.addConstr(a + b <= 10, name="una_restriccion")
+    md.addConstr(expr1 >= 5, name="demanda")
+    md.addConstr(x["p1"] == 2 * x["p2"])                # igualdad: usar ==
+    md.addConstrs((z.sum(i, "*") <= 1 for i in I), name="max_uno_por_i")   # familia
+    md.addConstrs((x[i] <= 8 * c for i in I), name="enlace")               # big-M
+    md.addConstr(libre >= -3)
     # Cotas rapidas despues de crear: x[i].UB = 5 ; x[i].LB = 1
     # Fijar variable: x["p1"].LB = x["p1"].UB = 3
 
     # ---------------- Objetivo ----------------------------------------------
-    m.setObjective(expr1 + a + 2 * b, GRB.MINIMIZE)    # o GRB.MAXIMIZE
-    # m.ModelSense = GRB.MAXIMIZE  (alternativa)
+    md.setObjective(expr1 + a + 2 * b, GRB.MINIMIZE)    # o GRB.MAXIMIZE
+    # md.ModelSense = GRB.MAXIMIZE  (alternativa)
 
     # ---------------- Resolver y leer resultados ----------------------------
-    m.optimize()
-    print("status:", m.status, "(2=OPTIMAL, 3=INFEASIBLE, 4=INF_OR_UNBD, "
+    md.optimize()
+    print("status:", md.status, "(2=OPTIMAL, 3=INFEASIBLE, 4=INF_OR_UNBD, "
           "5=UNBOUNDED, 9=TIME_LIMIT)")
-    if m.status == GRB.OPTIMAL:
-        print("ObjVal  :", m.ObjVal)
+    if md.status == GRB.OPTIMAL:
+        print("ObjVal  :", md.ObjVal)
         print("a.X     :", a.X)
-        print("x       :", m.getAttr("X", x))              # dict {indice: valor}
-        print("NumVars :", m.NumVars, " NumConstrs:", m.NumConstrs)
-        print("Binarias:", m.NumBinVars, " Enteras (incluye binarias):", m.NumIntVars)
-        # Para MIP: m.MIPGap, m.ObjBound, m.SolCount, m.Runtime
+        print("x       :", md.getAttr("X", x))              # dict {indice: valor}
+        print("NumVars :", md.NumVars, " NumConstrs:", md.NumConstrs)
+        print("Binarias:", md.NumBinVars, " Enteras (incluye binarias):", md.NumIntVars)
+        # Para MIP: md.MIPGap, md.ObjBound, md.SolCount, md.Runtime
         # Recorrer solo lo que vale algo:
         activos = [k for k, v in z.items() if v.X > 0.5]    # binarias: comparar con 0.5
         print("z activas:", activos)
 
     # ---------------- Guardar / depurar el modelo ---------------------------
-    # m.write("modelo.lp")   # formato legible: revisar que lo escrito = lo pensado
-    # m.write("modelo.sol")  # solucion
-    # m.update()             # (opcional) refresca el modelo antes de leer atributos
-    return m
+    # md.write("modelo.lp")   # formato legible: revisar que lo escrito = lo pensado
+    # md.write("modelo.sol")  # solucion
+    # md.update()             # (opcional) refresca el modelo antes de leer atributos
+    return md
 
 
 # =============================================================================
@@ -190,17 +197,17 @@ def ej_produccion():
         ("madera", "silla"): 3,      ("madera", "mesa"): 5,      ("madera", "cama"): 8,
     }
 
-    m = gp.Model("produccion")
-    m.Params.OutputFlag = 0
-    x = m.addVars(productos, lb=0, name="x")
-    m.setObjective(gp.quicksum(util[i] * x[i] for i in productos), GRB.MAXIMIZE)
-    rest = m.addConstrs(
+    md = gp.Model("produccion")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(productos, lb=0, name="x")
+    md.setObjective(gp.quicksum(util[i] * x[i] for i in productos), GRB.MAXIMIZE)
+    rest = md.addConstrs(
         (gp.quicksum(uso[r, i] * x[i] for i in productos) <= disp[r] for r in recursos),
         name="recurso",
     )
-    m.optimize()
+    md.optimize()
 
-    print(f"Utilidad maxima = {m.ObjVal:.2f}")
+    print(f"Utilidad maxima = {md.ObjVal:.2f}")
     for i in productos:
         print(f"  produce {x[i].X:8.2f} de {i}")
 
@@ -218,7 +225,7 @@ def ej_produccion():
         v = x[i]
         # RC = costo reducido: cuanto debe mejorar el coef. para que entre a la base
         print(f"{i:<8}{v.X:9.2f}{v.RC:16.2f}{v.SAObjLow:10.2f}{v.SAObjUp:10.2f}")
-    return m
+    return md
 
 
 def ej_dieta():
@@ -238,19 +245,19 @@ def ej_dieta():
         ("proteina", "pan"): 8,   ("proteina", "leche"): 8,   ("proteina", "huevo"): 6,  ("proteina", "carne"): 25,
         ("calcio", "pan"): 50,    ("calcio", "leche"): 300,   ("calcio", "huevo"): 30,   ("calcio", "carne"): 20,
     }
-    m = gp.Model("dieta")
-    m.Params.OutputFlag = 0
-    x = m.addVars(alimentos, lb=0, ub=10, name="porciones")   # ub = cota por variable
-    m.setObjective(x.prod(precio), GRB.MINIMIZE)
-    m.addConstrs(
+    md = gp.Model("dieta")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(alimentos, lb=0, ub=10, name="porciones")   # ub = cota por variable
+    md.setObjective(x.prod(precio), GRB.MINIMIZE)
+    md.addConstrs(
         (gp.quicksum(aporte[n, a] * x[a] for a in alimentos) >= minimo[n] for n in nutrientes),
         name="nutriente",
     )
-    m.optimize()
-    print(f"Costo minimo = {m.ObjVal:.2f}")
+    md.optimize()
+    print(f"Costo minimo = {md.ObjVal:.2f}")
     for a in alimentos:
         print(f"  {a:<6}: {x[a].X:.2f} porciones")
-    return m
+    return md
 
 
 def ej_transporte():
@@ -277,19 +284,19 @@ def ej_transporte():
     # Atajo: gp.multidict permite declarar claves y varios diccionarios juntos
     # arcos, costo = gp.multidict({("P1","C1"): 4, ...})
 
-    m = gp.Model("transporte")
-    m.Params.OutputFlag = 0
-    x = m.addVars(plantas, clientes, lb=0, name="x")
-    m.setObjective(gp.quicksum(costo[i, j] * x[i, j] for i in plantas for j in clientes),
+    md = gp.Model("transporte")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(plantas, clientes, lb=0, name="x")
+    md.setObjective(gp.quicksum(costo[i, j] * x[i, j] for i in plantas for j in clientes),
                    GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") <= oferta[i] for i in plantas), name="oferta")
-    m.addConstrs((x.sum("*", j) >= demanda[j] for j in clientes), name="demanda")
-    m.optimize()
-    print(f"Costo minimo = {m.ObjVal:.2f}")
+    md.addConstrs((x.sum(i, "*") <= oferta[i] for i in plantas), name="oferta")
+    md.addConstrs((x.sum("*", j) >= demanda[j] for j in clientes), name="demanda")
+    md.optimize()
+    print(f"Costo minimo = {md.ObjVal:.2f}")
     for (i, j), v in x.items():
         if v.X > 1e-6:
             print(f"  {i} -> {j}: {v.X:.0f}")
-    return m
+    return md
 
 
 def ej_asignacion():
@@ -309,19 +316,19 @@ def ej_asignacion():
         "Carla": {"T1": 5, "T2": 8, "T3": 1, "T4": 8},
         "Diego": {"T1": 7, "T2": 6, "T3": 9, "T4": 4},
     }
-    m = gp.Model("asignacion")
-    m.Params.OutputFlag = 0
-    x = m.addVars(trabajadores, tareas, vtype=GRB.BINARY, name="x")
-    m.setObjective(gp.quicksum(c[i][j] * x[i, j] for i in trabajadores for j in tareas),
+    md = gp.Model("asignacion")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(trabajadores, tareas, vtype=GRB.BINARY, name="x")
+    md.setObjective(gp.quicksum(c[i][j] * x[i, j] for i in trabajadores for j in tareas),
                    GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") == 1 for i in trabajadores), name="trab")
-    m.addConstrs((x.sum("*", j) == 1 for j in tareas), name="tarea")
-    m.optimize()
-    print(f"Costo minimo = {m.ObjVal:.2f}")
+    md.addConstrs((x.sum(i, "*") == 1 for i in trabajadores), name="trab")
+    md.addConstrs((x.sum("*", j) == 1 for j in tareas), name="tarea")
+    md.optimize()
+    print(f"Costo minimo = {md.ObjVal:.2f}")
     for (i, j), v in x.items():
         if v.X > 0.5:
             print(f"  {i} -> {j} (costo {c[i][j]})")
-    return m
+    return md
 
 
 def ej_mochila():
@@ -337,15 +344,15 @@ def ej_mochila():
     valor = [10, 13, 18, 31, 7, 15]
     peso = [11, 15, 20, 35, 10, 33]
     W = 47
-    m = gp.Model("mochila")
-    m.Params.OutputFlag = 0
-    x = m.addVars(items, vtype=GRB.BINARY, name="x")
-    m.setObjective(gp.quicksum(valor[i] * x[i] for i in items), GRB.MAXIMIZE)
-    m.addConstr(gp.quicksum(peso[i] * x[i] for i in items) <= W, name="capacidad")
-    m.optimize()
+    md = gp.Model("mochila")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(items, vtype=GRB.BINARY, name="x")
+    md.setObjective(gp.quicksum(valor[i] * x[i] for i in items), GRB.MAXIMIZE)
+    md.addConstr(gp.quicksum(peso[i] * x[i] for i in items) <= W, name="capacidad")
+    md.optimize()
     elegidos = [i for i in items if x[i].X > 0.5]
-    print(f"Valor = {m.ObjVal:.0f}; items {elegidos}; peso = {sum(peso[i] for i in elegidos)}/{W}")
-    return m
+    print(f"Valor = {md.ObjVal:.0f}; items {elegidos}; peso = {sum(peso[i] for i in elegidos)}/{W}")
+    return md
 
 
 def ej_localizacion():
@@ -370,24 +377,24 @@ def ej_localizacion():
          ("C4", "S1"): 5, ("C4", "S2"): 4, ("C4", "S3"): 3,
          ("C5", "S1"): 7, ("C5", "S2"): 6, ("C5", "S3"): 2}
 
-    m = gp.Model("localizacion")
-    m.Params.OutputFlag = 0
-    y = m.addVars(sitios, vtype=GRB.BINARY, name="y")
-    x = m.addVars(clientes, sitios, lb=0, name="x")
-    m.setObjective(
+    md = gp.Model("localizacion")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    y = md.addVars(sitios, vtype=GRB.BINARY, name="y")
+    x = md.addVars(clientes, sitios, lb=0, name="x")
+    md.setObjective(
         gp.quicksum(fijo[j] * y[j] for j in sitios)
         + gp.quicksum(c[i, j] * x[i, j] for i in clientes for j in sitios),
         GRB.MINIMIZE,
     )
-    m.addConstrs((x.sum(i, "*") == demanda[i] for i in clientes), name="demanda")
-    m.addConstrs((x.sum("*", j) <= cap[j] * y[j] for j in sitios), name="capacidad")
-    m.optimize()
-    print(f"Costo total = {m.ObjVal:.2f}")
+    md.addConstrs((x.sum(i, "*") == demanda[i] for i in clientes), name="demanda")
+    md.addConstrs((x.sum("*", j) <= cap[j] * y[j] for j in sitios), name="capacidad")
+    md.optimize()
+    print(f"Costo total = {md.ObjVal:.2f}")
     print("  Abiertos:", [j for j in sitios if y[j].X > 0.5])
     for (i, j), v in x.items():
         if v.X > 1e-6:
             print(f"  {i} <- {j}: {v.X:.0f}")
-    return m
+    return md
 
 
 def ej_multiperiodo():
@@ -406,20 +413,20 @@ def ej_multiperiodo():
     c_inv = 1.5
     inv0 = 20
 
-    m = gp.Model("multiperiodo")
-    m.Params.OutputFlag = 0
-    prod = m.addVars(T, ub=cap_prod, name="prod")
-    inv = m.addVars(T, lb=0, name="inv")
-    m.setObjective(gp.quicksum(c_prod[t] * prod[t] + c_inv * inv[t] for t in T), GRB.MINIMIZE)
+    md = gp.Model("multiperiodo")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    prod = md.addVars(T, ub=cap_prod, name="prod")
+    inv = md.addVars(T, lb=0, name="inv")
+    md.setObjective(gp.quicksum(c_prod[t] * prod[t] + c_inv * inv[t] for t in T), GRB.MINIMIZE)
     for t in T:
         anterior = inv0 if t == 0 else inv[t - 1]       # <- patron para t = 0
-        m.addConstr(anterior + prod[t] - demanda[t] == inv[t], name=f"balance_{t}")
-    m.optimize()
-    print(f"Costo = {m.ObjVal:.2f}")
+        md.addConstr(anterior + prod[t] - demanda[t] == inv[t], name=f"balance_{t}")
+    md.optimize()
+    print(f"Costo = {md.ObjVal:.2f}")
     print("  t  demanda  prod  inv")
     for t in T:
         print(f"  {t}  {demanda[t]:7d}  {prod[t].X:4.0f}  {inv[t].X:4.0f}")
-    return m
+    return md
 
 
 def ej_ruta_corta():
@@ -439,16 +446,16 @@ def ej_ruta_corta():
     nodos = ["A", "B", "C", "D", "E", "F"]
     origen, destino = "A", "E"
 
-    m = gp.Model("ruta_corta")
-    m.Params.OutputFlag = 0
-    x = m.addVars(arcos, vtype=GRB.BINARY, name="x")
-    m.setObjective(x.prod(costo), GRB.MINIMIZE)
+    md = gp.Model("ruta_corta")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVars(arcos, vtype=GRB.BINARY, name="x")
+    md.setObjective(x.prod(costo), GRB.MINIMIZE)
     for n in nodos:
         b = 1 if n == origen else (-1 if n == destino else 0)
-        m.addConstr(x.sum(n, "*") - x.sum("*", n) == b, name=f"flujo_{n}")
-    m.optimize()
-    print(f"Distancia = {m.ObjVal:.0f}; arcos:", [a for a in arcos if x[a].X > 0.5])
-    return m
+        md.addConstr(x.sum(n, "*") - x.sum("*", n) == b, name=f"flujo_{n}")
+    md.optimize()
+    print(f"Distancia = {md.ObjVal:.0f}; arcos:", [a for a in arcos if x[a].X > 0.5])
+    return md
 
 
 def ej_cobertura():
@@ -464,15 +471,15 @@ def ej_cobertura():
         "E1": {1, 2, 3}, "E2": {3, 4, 5}, "E3": {5, 6, 7},
         "E4": {1, 4, 7}, "E5": {2, 6},
     }
-    m = gp.Model("cobertura")
-    m.Params.OutputFlag = 0
-    y = m.addVars(cubre.keys(), vtype=GRB.BINARY, name="y")
-    m.setObjective(y.sum(), GRB.MINIMIZE)
-    m.addConstrs((gp.quicksum(y[j] for j in cubre if i in cubre[j]) >= 1 for i in zonas),
+    md = gp.Model("cobertura")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    y = md.addVars(cubre.keys(), vtype=GRB.BINARY, name="y")
+    md.setObjective(y.sum(), GRB.MINIMIZE)
+    md.addConstrs((gp.quicksum(y[j] for j in cubre if i in cubre[j]) >= 1 for i in zonas),
                  name="cubrir")
-    m.optimize()
-    print(f"Estaciones = {m.ObjVal:.0f}:", [j for j in cubre if y[j].X > 0.5])
-    return m
+    md.optimize()
+    print(f"Estaciones = {md.ObjVal:.0f}:", [j for j in cubre if y[j].X > 0.5])
+    return md
 
 
 # =============================================================================
@@ -500,100 +507,100 @@ def ej_linealizaciones():
             addGenConstrAnd, addGenConstrOr, addGenConstrIndicator
     """
     # ---- (a) valor absoluto: min |x - 5| + |y + 2| con x + y == 10 ----------
-    m = gp.Model("abs")
-    m.Params.OutputFlag = 0
-    x = m.addVar(lb=-GRB.INFINITY, name="x")
-    y = m.addVar(lb=-GRB.INFINITY, name="y")
-    t1 = m.addVar(name="t1")
-    t2 = m.addVar(name="t2")
-    m.addConstr(x + y == 10)
-    m.addConstr(t1 >= x - 5)
-    m.addConstr(t1 >= -(x - 5))
-    m.addConstr(t2 >= y + 2)
-    m.addConstr(t2 >= -(y + 2))
-    m.setObjective(t1 + t2, GRB.MINIMIZE)
-    m.optimize()
-    print(f"(a) abs      : obj={m.ObjVal:.2f}, x={x.X:.2f}, y={y.X:.2f}")
+    md = gp.Model("abs")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVar(lb=-GRB.INFINITY, name="x")
+    y = md.addVar(lb=-GRB.INFINITY, name="y")
+    t1 = md.addVar(name="t1")
+    t2 = md.addVar(name="t2")
+    md.addConstr(x + y == 10)
+    md.addConstr(t1 >= x - 5)
+    md.addConstr(t1 >= -(x - 5))
+    md.addConstr(t2 >= y + 2)
+    md.addConstr(t2 >= -(y + 2))
+    md.setObjective(t1 + t2, GRB.MINIMIZE)
+    md.optimize()
+    print(f"(a) abs      : obj={md.ObjVal:.2f}, x={x.X:.2f}, y={y.X:.2f}")
 
     # ---- (b) minimax: repartir 100 unidades en 3 destinos minimizando la mayor carga ponderada
-    m = gp.Model("minimax")
-    m.Params.OutputFlag = 0
+    md = gp.Model("minimax")
+    md.setParam(GRB.Param.OutputFlag, 0)
     w = {0: 1.0, 1: 2.0, 2: 4.0}
-    q = m.addVars(w.keys(), lb=0, name="q")
-    z = m.addVar(name="z")
-    m.addConstr(q.sum() == 100)
-    m.addConstrs((z >= w[k] * q[k] for k in w), name="max")
-    m.setObjective(z, GRB.MINIMIZE)
-    m.optimize()
+    q = md.addVars(w.keys(), lb=0, name="q")
+    z = md.addVar(name="z")
+    md.addConstr(q.sum() == 100)
+    md.addConstrs((z >= w[k] * q[k] for k in w), name="max")
+    md.setObjective(z, GRB.MINIMIZE)
+    md.optimize()
     print(f"(b) minimax  : z={z.X:.2f}, q={[round(q[k].X, 2) for k in w]}")
 
     # ---- (c) costo fijo: x <= M*y ------------------------------------------
-    m = gp.Model("fijo")
-    m.Params.OutputFlag = 0
-    x = m.addVar(ub=50, name="x")
-    y = m.addVar(vtype=GRB.BINARY, name="y")
-    m.addConstr(x <= 50 * y)
-    m.addConstr(x >= 10)
-    m.setObjective(100 * y + 2 * x, GRB.MINIMIZE)
-    m.optimize()
-    print(f"(c) fijo     : obj={m.ObjVal:.2f}, y={y.X:.0f}, x={x.X:.0f}")
+    md = gp.Model("fijo")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVar(ub=50, name="x")
+    y = md.addVar(vtype=GRB.BINARY, name="y")
+    md.addConstr(x <= 50 * y)
+    md.addConstr(x >= 10)
+    md.setObjective(100 * y + 2 * x, GRB.MINIMIZE)
+    md.optimize()
+    print(f"(c) fijo     : obj={md.ObjVal:.2f}, y={y.X:.0f}, x={x.X:.0f}")
 
     # ---- (d)/(e) implicaciones con big-M vs. restriccion INDICADORA ----------
-    m = gp.Model("logica")
-    m.Params.OutputFlag = 0
-    x = m.addVar(ub=100, name="x")
-    w = m.addVar(vtype=GRB.BINARY, name="w")
+    md = gp.Model("logica")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVar(ub=100, name="x")
+    w = md.addVar(vtype=GRB.BINARY, name="w")
     M = 100
     # "Si w == 1 entonces x <= 20"  (big-M)
-    m.addConstr(x <= 20 + M * (1 - w))
+    md.addConstr(x <= 20 + M * (1 - w))
     # Equivalente con indicadora (sin necesidad de M):
-    #   m.addGenConstrIndicator(w, True, x, GRB.LESS_EQUAL, 20)
-    #   m.addConstr((w == 1) >> (x <= 20))            # sintaxis corta
+    #   md.addGenConstrIndicator(w, True, x, GRB.LESS_EQUAL, 20)
+    #   md.addConstr((w == 1) >> (x <= 20))            # sintaxis corta
     # "Si w == 0 entonces x >= 60"
-    m.addConstr(x >= 60 - 60 * w)
-    m.setObjective(x - 30 * w, GRB.MAXIMIZE)
-    m.optimize()
-    print(f"(d) logica   : obj={m.ObjVal:.2f}, w={round(w.X)}, x={x.X:.0f}")
+    md.addConstr(x >= 60 - 60 * w)
+    md.setObjective(x - 30 * w, GRB.MAXIMIZE)
+    md.optimize()
+    print(f"(d) logica   : obj={md.ObjVal:.2f}, w={round(w.X)}, x={x.X:.0f}")
 
     # ---- (g) producto binaria*continua -------------------------------------
-    m = gp.Model("producto")
-    m.Params.OutputFlag = 0
+    md = gp.Model("producto")
+    md.setParam(GRB.Param.OutputFlag, 0)
     U = 10
-    x = m.addVar(ub=U, name="x")
-    y = m.addVar(vtype=GRB.BINARY, name="y")
-    p = m.addVar(name="p")                       # p = x*y
-    m.addConstr(p <= U * y)
-    m.addConstr(p <= x)
-    m.addConstr(p >= x - U * (1 - y))
-    m.addConstr(x == 7)
-    m.addConstr(y == 1)
-    m.setObjective(p, GRB.MAXIMIZE)
-    m.optimize()
+    x = md.addVar(ub=U, name="x")
+    y = md.addVar(vtype=GRB.BINARY, name="y")
+    p = md.addVar(name="p")                       # p = x*y
+    md.addConstr(p <= U * y)
+    md.addConstr(p <= x)
+    md.addConstr(p >= x - U * (1 - y))
+    md.addConstr(x == 7)
+    md.addConstr(y == 1)
+    md.setObjective(p, GRB.MAXIMIZE)
+    md.optimize()
     print(f"(g) producto : p={p.X:.1f} (esperado 7)")
 
     # ---- (h) restricciones generales ---------------------------------------
-    m = gp.Model("general")
-    m.Params.OutputFlag = 0
-    x = m.addVar(lb=-10, ub=10, name="x")
-    absx = m.addVar(name="absx")
-    m.addGenConstrAbs(absx, x, name="abs")       # absx = |x|
-    m.addConstr(x <= -3)
-    m.setObjective(absx, GRB.MINIMIZE)
-    m.optimize()
+    md = gp.Model("general")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVar(lb=-10, ub=10, name="x")
+    absx = md.addVar(name="absx")
+    md.addGenConstrAbs(absx, x, name="abs")       # absx = |x|
+    md.addConstr(x <= -3)
+    md.setObjective(absx, GRB.MINIMIZE)
+    md.optimize()
     print(f"(h) GenConstr: |x|={absx.X:.1f}, x={x.X:.1f}")
 
     # ---- Multiobjetivo (jerarquico): primero el de mayor prioridad ----------
-    m = gp.Model("multiobj")
-    m.Params.OutputFlag = 0
-    x = m.addVar(ub=10, name="x")
-    y = m.addVar(ub=10, name="y")
-    m.addConstr(x + y <= 12)
-    m.ModelSense = GRB.MAXIMIZE
-    m.setObjectiveN(x, index=0, priority=2, name="primero_x")
-    m.setObjectiveN(y, index=1, priority=1, name="luego_y")
-    m.optimize()
+    md = gp.Model("multiobj")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    x = md.addVar(ub=10, name="x")
+    y = md.addVar(ub=10, name="y")
+    md.addConstr(x + y <= 12)
+    md.ModelSense = GRB.MAXIMIZE
+    md.setObjectiveN(x, index=0, priority=2, name="primero_x")
+    md.setObjectiveN(y, index=1, priority=1, name="luego_y")
+    md.optimize()
     print(f"(i) multiobj : x={x.X:.1f}, y={y.X:.1f}")
-    return m
+    return md
 
 
 # =============================================================================
@@ -603,67 +610,121 @@ def ej_infactible():
     """
     status 3 (INFEASIBLE): restricciones contradictorias.
     status 5 (UNBOUNDED) : el objetivo mejora sin limite (falta una restriccion/cota).
-    status 4 (INF_OR_UNBD): Gurobi no sabe cual; poner m.Params.DualReductions = 0
+    status 4 (INF_OR_UNBD): Gurobi no sabe cual; poner md.setParam(GRB.Param.DualReductions, 0)
                             y reoptimizar para distinguir.
     Herramienta clave: IIS = subconjunto minimo de restricciones en conflicto.
     """
-    m = gp.Model("infactible")
-    m.Params.OutputFlag = 0
-    m.Params.DualReductions = 0     # evita el status ambiguo 4 (INF_OR_UNBD)
-    x = m.addVar(name="x")
-    y = m.addVar(name="y")
-    m.addConstr(x + y <= 4, name="a")
-    m.addConstr(x + y >= 6, name="b")       # contradice a
-    m.addConstr(x <= 10, name="c")          # irrelevante
-    m.setObjective(x + y, GRB.MAXIMIZE)
-    m.optimize()
+    md = gp.Model("infactible")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    md.setParam(GRB.Param.DualReductions, 0)     # evita el status ambiguo 4 (INF_OR_UNBD)
+    x = md.addVar(name="x")
+    y = md.addVar(name="y")
+    md.addConstr(x + y <= 4, name="a")
+    md.addConstr(x + y >= 6, name="b")       # contradice a
+    md.addConstr(x <= 10, name="c")          # irrelevante
+    md.setObjective(x + y, GRB.MAXIMIZE)
+    md.optimize()
 
-    if m.status == GRB.INFEASIBLE:
+    if md.status == GRB.INFEASIBLE:
         print("Modelo INFACTIBLE. Calculando IIS...")
-        m.computeIIS()
-        for c in m.getConstrs():
+        md.computeIIS()
+        for c in md.getConstrs():
             if c.IISConstr:
                 print("  en conflicto:", c.ConstrName)
-        # m.write("conflicto.ilp")
-        # Alternativa: m.feasRelax(...) para ver cuanto habria que relajar.
-    elif m.status in (GRB.UNBOUNDED, GRB.INF_OR_UNBD):
+        # md.write("conflicto.ilp")
+        # Alternativa: md.feasRelax(...) para ver cuanto habria que relajar.
+    elif md.status in (GRB.UNBOUNDED, GRB.INF_OR_UNBD):
         print("No acotado: revisar signos del objetivo y cotas faltantes")
-    return m
+    return md
 
 
 # =============================================================================
 # PARTE 5. CLUSTERING CON OPTIMIZACION
 # =============================================================================
 """
+La plantilla completa, lista para usar con los archivos del profesor, esta en
+    Clustering_MILP_base.py     (misma estructura que VRP_MILP_base.py)
+Esta parte explica la teoria y deja cada modelo como funcion para estudiarlo.
+
+NOMENCLATURA (la misma de la clase / VRP_MILP_base.py)
+    n      numero de puntos            V = range(n)   conjunto de puntos
+    K      numero de clusters          Kset = range(K)
+    dist   matriz de distancias (lista de listas): dist[i][j]
+    q, Q   peso de cada punto y capacidad maxima de un cluster
+    md     el modelo de Gurobi         X, Y   variables binarias
+
 IDEA GENERAL
 ------------
-Clustering = repartir n puntos en k grupos para que los puntos de un mismo
-grupo esten "cerca". Con programacion lineal entera se modela de forma EXACTA
-cuando cada grupo se representa por un punto REAL del conjunto (la "mediana"
-o "medoide"), no por un promedio (centroide). Ese es el modelo p-MEDIANA.
+Clustering = repartir n puntos en K grupos para que los puntos de un mismo
+grupo esten "cerca". Hay dos formas de modelarlo:
 
-Patron de variables (aprenderlo de memoria):
-    y[j]   binaria = 1 si el punto j es elegido como CENTRO de un cluster
-    x[i,j] binaria = 1 si el punto i se asigna al centro j
+(A) CON CENTROS (p-mediana / k-medoids / p-centro).  Cada cluster tiene un
+    punto REAL como representante.
+        Y[j]   binaria = 1 si el punto j es elegido como CENTRO
+        X[i,j] binaria = 1 si el punto i se asigna al centro j
+        (1) sum_j X[i,j] == 1        cada punto va a exactamente un centro
+        (2) X[i,j] <= Y[j]           solo se asigna a puntos que son centros
+        (3) sum_j Y[j] == K          exactamente K centros
+    Objetivos: suma de distancias (p-mediana) o distancia maxima (p-centro).
 
-Restricciones del modelo base:
-    (1) sum_j x[i,j] == 1        cada punto va a exactamente un centro
-    (2) x[i,j] <= y[j]           solo se asigna a puntos que son centros
-    (3) sum_j y[j] == k          hay exactamente k clusters
+(B) POR PARES (sin centros).  Importa que los puntos del grupo esten juntos.
+        X[i,k] binaria = 1 si el punto i va al cluster k
+        Z[i,j] = 1 si i y j quedan en el mismo cluster
+        (1) sum_k X[i,k] == 1
+        (2) Z[i,j] >= X[i,k] + X[j,k] - 1     para todo k
+    Objetivos: suma de distancias entre pares o diametro maximo.
 
 Variantes segun lo que pida el enunciado:
-    - Minimizar suma de distancias           -> p-MEDIANA        (5.2)
-    - Clusters de tamano limitado/balanceado -> capacidades      (5.3)
-    - Minimizar la distancia MAXIMA          -> p-CENTRO (minimax) (5.4)
-    - No fijar k, fijar distancia maxima     -> min #clusters    (5.5)
-    - Centros ya conocidos                   -> asignacion       (5.6)
+    - Tamano/carga limitada por cluster       -> restriccion con q y Q (5.3)
+    - Minimizar la distancia MAXIMA           -> tecnica minimax (5.4)
+    - No fijar K, fijar distancia maxima      -> min #clusters   (5.6)
+    - Centros ya conocidos                    -> asignacion      (5.7)
+    - Elegir K                                -> barrido de K    (5.8)
 """
 
 
 # ---------------------------- 5.1 DATOS Y DISTANCIAS -------------------------
+def leer_numeros(nombre):
+    """
+    Lee un txt/csv y devuelve la lista de filas numericas. Salta encabezados,
+    'NAME:', 'NODE_COORD_SECTION', 'EOF', etc. Acepta separador espacio, coma
+    o ';' (csv de Excel con coma decimal).
+    Alternativas: np.loadtxt(nombre) o pandas.read_csv(nombre).
+    """
+    filas = []
+    with open(nombre) as f:
+        for linea in f:
+            if ";" in linea:
+                partes = [p.strip().replace(",", ".") for p in linea.split(";")]
+            else:
+                partes = linea.replace(",", " ").split()
+            try:
+                fila = [float(p) for p in partes]
+            except ValueError:
+                continue
+            if fila:
+                filas.append(fila)
+    largos = [len(fila) for fila in filas]
+    largo = max(set(largos), key=largos.count)
+    return [fila for fila in filas if len(fila) == largo]
+
+
+def cargar_coordenadas(nombre, columnas=None):
+    """
+    Devuelve la lista de puntos (tuplas). Si hay 3+ columnas y la primera es un
+    indice 1..n (o 0..n-1) la descarta. `columnas` fuerza cuales usar.
+    """
+    filas = leer_numeros(nombre)
+    if columnas is None:
+        primera = [fila[0] for fila in filas]
+        es_indice = primera in (list(range(1, len(filas) + 1)), list(range(len(filas))))
+        columnas = list(range(1 if (len(filas[0]) >= 3 and es_indice) else 0, len(filas[0])))
+    return [tuple(fila[c] for c in columnas) for fila in filas]
+
+
 def generar_puntos(n_por_grupo=(8, 8, 8), centros=((2, 2), (8, 3), (5, 9)),
                    dispersion=1.0, seed=7):
-    """Genera puntos 2D alrededor de `centros` (para practicar)."""
+    """Genera puntos 2D alrededor de `centros` (para practicar sin archivo)."""
     rnd = random.Random(seed)
     pts = []
     for (cx, cy), n in zip(centros, n_por_grupo):
@@ -684,230 +745,293 @@ def distancia(p, q, tipo="euclidiana"):
 
 
 def matriz_distancias(pts, tipo="euclidiana"):
+    """dist[i][j] igual que en VRP_MILP_base.py."""
     n = len(pts)
     return [[distancia(pts[i], pts[j], tipo) for j in range(n)] for i in range(n)]
-    # Con numpy:  from scipy.spatial.distance import cdist ; cdist(P, P)
-    # Si el examen da una matriz o un CSV, leerla con pandas / csv y usarla igual.
+    # Si el profesor entrega directamente la matriz: dist = leer_numeros("matriz.txt")
 
 
-def imprimir_clusters(pts, d, centros, asign):
+def imprimir_clusters(dist, centros, asign):
     """asign: dict {i: j}. Muestra los clusters y su costo."""
     total = 0.0
     for j in centros:
         miembros = [i for i, c in asign.items() if c == j]
-        costo = sum(d[i][j] for i in miembros)
+        costo = sum(dist[i][j] for i in miembros)
         total += costo
         print(f"  Cluster con centro {j}: {len(miembros)} puntos "
               f"{sorted(miembros)} | suma dist = {costo:.2f}")
     print(f"  Suma total de distancias = {total:.2f}")
 
 
-def _extraer(x, y, n):
-    centros = [j for j in range(n) if y[j].X > 0.5]
-    asign = {i: j for i in range(n) for j in range(n) if x[i, j].X > 0.5}
+def _extraer(X, Y, n):
+    centros = [j for j in range(n) if Y[j].X > 0.5]
+    asign = {i: j for i in range(n) for j in range(n) if X[i, j].X > 0.5}
     return centros, asign
 
 
 # ---------------------------- 5.2 p-MEDIANA ----------------------------------
-def modelo_p_mediana(d, k, cap=None, tam_min=None, nombre="p_mediana"):
+def modelo_p_mediana(dist, K, q=None, Q=None, Q_min=None, nombre="p_mediana"):
     """
     p-MEDIANA / k-MEDOIDS (con capacidades opcionales).
 
-      min  sum_{i,j} d[i,j] * x[i,j]
-      s.a. sum_j x[i,j] == 1              para todo i      (cada punto, un centro)
-           x[i,j] <= y[j]                 para todo i,j    (asignar solo a centros)
-           sum_j y[j] == k                                 (exactamente k centros)
-           sum_i x[i,j] <= cap * y[j]     para todo j      (opcional: tamano maximo)
-           sum_i x[i,j] >= tam_min * y[j] para todo j      (opcional: tamano minimo)
-           x[i,j], y[j] in {0,1}
+      min  sum_{i,j} dist[i][j] * X[i,j]
+      s.a. sum_j X[i,j] == 1               para todo i     (cada punto, un centro)
+           X[i,j] <= Y[j]                  para todo i,j   (asignar solo a centros)
+           sum_j Y[j] == K                                 (exactamente K centros)
+           X[j,j] == Y[j]                  para todo j     (el centro esta en su cluster)
+           sum_i q[i] X[i,j] <= Q * Y[j]   para todo j     (opcional: carga maxima)
+           sum_i q[i] X[i,j] >= Q_min * Y[j]               (opcional: carga minima)
+           X[i,j], Y[j] in {0,1}
 
-    Nota: x[j,j] = 1 para un centro j (se asigna a si mismo, distancia 0).
-    Sin capacidades, x puede declararse continua (lb=0, ub=1) y la solucion
-    sale entera igual (mas rapido). Con capacidades, dejar x BINARIA.
+    Sin capacidades, X puede ser continua (lb=0, ub=1) y la solucion sale
+    entera igual (mas rapido). Con capacidades, dejar X BINARIA.
     """
-    n = len(d)
-    m = gp.Model(nombre)
-    m.Params.OutputFlag = 0
-    x = m.addVars(n, n, vtype=GRB.BINARY, name="x")
-    y = m.addVars(n, vtype=GRB.BINARY, name="y")
+    n = len(dist)
+    V = range(n)
+    q = q if q is not None else [1] * n
+    md = gp.Model(nombre)
+    md.setParam(GRB.Param.OutputFlag, 0)
+    X = md.addVars(n, n, vtype=GRB.BINARY, name="X")
+    Y = md.addVars(n, vtype=GRB.BINARY, name="Y")
 
-    m.setObjective(gp.quicksum(d[i][j] * x[i, j] for i in range(n) for j in range(n)),
-                   GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") == 1 for i in range(n)), name="un_centro")
-    m.addConstrs((x[i, j] <= y[j] for i in range(n) for j in range(n)), name="enlace")
-    m.addConstr(y.sum() == k, name="k_centros")
-    if cap is not None:
-        m.addConstrs((x.sum("*", j) <= cap * y[j] for j in range(n)), name="cap_max")
-    if tam_min is not None:
-        m.addConstrs((x.sum("*", j) >= tam_min * y[j] for j in range(n)), name="cap_min")
-    return m, x, y
+    md.setObjective(gp.quicksum(dist[i][j] * X[i, j] for i in V for j in V), GRB.MINIMIZE)
+    md.addConstrs((gp.quicksum(X[i, j] for j in V) == 1 for i in V), name="un_centro")
+    md.addConstrs((X[i, j] <= Y[j] for i in V for j in V), name="solo_a_centros")
+    md.addConstr(gp.quicksum(Y[j] for j in V) == K, name="k_centros")
+    md.addConstrs((X[j, j] == Y[j] for j in V), name="centro_en_su_cluster")
+    if Q is not None:
+        md.addConstrs((gp.quicksum(q[i] * X[i, j] for i in V) <= Q * Y[j] for j in V), name="cap_max")
+    if Q_min is not None:
+        md.addConstrs((gp.quicksum(q[i] * X[i, j] for i in V) >= Q_min * Y[j] for j in V), name="cap_min")
+    return md, X, Y
 
 
-def ej_p_mediana(k=3):
+def ej_p_mediana(K=3, archivo=None):
     """5.2 CLUSTERING p-mediana (k-medoids): minimiza la suma de distancias."""
-    pts = generar_puntos()
-    d = matriz_distancias(pts)
-    m, x, y = modelo_p_mediana(d, k)
-    m.optimize()
-    print(f"[p-mediana] n={len(pts)}, k={k}, status={m.status}, obj={m.ObjVal:.2f}")
-    centros, asign = _extraer(x, y, len(pts))
-    imprimir_clusters(pts, d, centros, asign)
-    return m
+    pts = cargar_coordenadas(archivo) if archivo else generar_puntos()
+    dist = matriz_distancias(pts)
+    md, X, Y = modelo_p_mediana(dist, K)
+    md.optimize()
+    print(f"[p-mediana] n={len(pts)}, K={K}, status={md.status}, obj={md.ObjVal:.2f}")
+    centros, asign = _extraer(X, Y, len(pts))
+    imprimir_clusters(dist, centros, asign)
+    return md
 
 
 # ---------------------------- 5.3 CAPACIDADES / BALANCEO ---------------------
-def ej_p_mediana_capacitada(k=3, cap=9, tam_min=7):
-    """Clusters de entre `tam_min` y `cap` puntos (por ejemplo, grupos de trabajo)."""
+def ej_p_mediana_capacitada(K=3, Q=9, Q_min=7):
+    """5.3 CLUSTERING con carga minima y maxima por cluster (q = 1: numero de puntos)."""
     pts = generar_puntos(n_por_grupo=(12, 6, 6))      # grupos naturales desbalanceados
-    d = matriz_distancias(pts)
-    m, x, y = modelo_p_mediana(d, k, cap=cap, tam_min=tam_min, nombre="p_mediana_cap")
-    m.optimize()
-    if m.status != GRB.OPTIMAL:
-        print("Sin solucion optima. status =", m.status, "(si es 3: k*cap < n o k*tam_min > n)")
-        return m
-    print(f"[p-mediana capacitada] n={len(pts)}, k={k}, cap={cap}, min={tam_min}, obj={m.ObjVal:.2f}")
-    centros, asign = _extraer(x, y, len(pts))
-    imprimir_clusters(pts, d, centros, asign)
-    return m
+    dist = matriz_distancias(pts)
+    md, X, Y = modelo_p_mediana(dist, K, Q=Q, Q_min=Q_min, nombre="p_mediana_cap")
+    md.optimize()
+    if md.status != GRB.OPTIMAL:
+        print("Sin solucion optima. status =", md.status, "(si es 3: K*Q < n o K*Q_min > n)")
+        return md
+    print(f"[p-mediana capacitada] n={len(pts)}, K={K}, Q={Q}, Q_min={Q_min}, obj={md.ObjVal:.2f}")
+    centros, asign = _extraer(X, Y, len(pts))
+    imprimir_clusters(dist, centros, asign)
+    return md
 
 
 # ---------------------------- 5.4 p-CENTRO (MINIMAX) -------------------------
-def modelo_p_centro(d, k):
+def modelo_p_centro(dist, K):
     """
     p-CENTRO: minimizar la distancia MAXIMA de un punto a su centro (radio).
-    Se agrega la variable continua z y se aplica la tecnica MINIMAX:
+    Se agrega la variable continua Rmax con la tecnica MINIMAX:
 
-      min  z
-      s.a. sum_j x[i,j] == 1
-           x[i,j] <= y[j]
-           sum_j y[j] == k
-           sum_j d[i,j]*x[i,j] <= z        para todo i     (z >= distancia de i a su centro)
+      min  Rmax
+      s.a. (las mismas restricciones 1-3 de la p-mediana)
+           sum_j dist[i][j]*X[i,j] <= Rmax        para todo i
     """
-    n = len(d)
-    m = gp.Model("p_centro")
-    m.Params.OutputFlag = 0
-    x = m.addVars(n, n, vtype=GRB.BINARY, name="x")
-    y = m.addVars(n, vtype=GRB.BINARY, name="y")
-    z = m.addVar(lb=0, name="radio")
-    m.setObjective(z, GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") == 1 for i in range(n)), name="un_centro")
-    m.addConstrs((x[i, j] <= y[j] for i in range(n) for j in range(n)), name="enlace")
-    m.addConstr(y.sum() == k, name="k_centros")
-    m.addConstrs((gp.quicksum(d[i][j] * x[i, j] for j in range(n)) <= z for i in range(n)),
-                 name="radio")
-    return m, x, y, z
+    n = len(dist)
+    V = range(n)
+    md = gp.Model("p_centro")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    X = md.addVars(n, n, vtype=GRB.BINARY, name="X")
+    Y = md.addVars(n, vtype=GRB.BINARY, name="Y")
+    Rmax = md.addVar(lb=0, name="Rmax")
+    md.setObjective(Rmax, GRB.MINIMIZE)
+    md.addConstrs((gp.quicksum(X[i, j] for j in V) == 1 for i in V), name="un_centro")
+    md.addConstrs((X[i, j] <= Y[j] for i in V for j in V), name="solo_a_centros")
+    md.addConstr(gp.quicksum(Y[j] for j in V) == K, name="k_centros")
+    md.addConstrs((gp.quicksum(dist[i][j] * X[i, j] for j in V) <= Rmax for i in V), name="def_Rmax")
+    return md, X, Y, Rmax
 
 
-def ej_p_centro(k=3):
+def ej_p_centro(K=3):
     """5.4 CLUSTERING p-centro: minimiza la distancia maxima punto-centro."""
     pts = generar_puntos()
-    d = matriz_distancias(pts)
-    m, x, y, z = modelo_p_centro(d, k)
-    m.optimize()
-    print(f"[p-centro] n={len(pts)}, k={k}, radio minimo = {z.X:.3f}")
-    centros, asign = _extraer(x, y, len(pts))
-    imprimir_clusters(pts, d, centros, asign)
-    return m
+    dist = matriz_distancias(pts)
+    md, X, Y, Rmax = modelo_p_centro(dist, K)
+    md.optimize()
+    print(f"[p-centro] n={len(pts)}, K={K}, radio minimo = {Rmax.X:.3f}")
+    centros, asign = _extraer(X, Y, len(pts))
+    imprimir_clusters(dist, centros, asign)
+    return md
 
 
-# ---------------------------- 5.5 MIN #CLUSTERS CON DIAMETRO MAXIMO ----------
-def modelo_min_clusters_diametro(d, D, K_max):
+# ---------------------------- 5.5 FORMULACION POR PARES ----------------------
+def modelo_pares(dist, K, objetivo="SUMA", q=None, Q=None):
     """
-    No se conoce k. Se exige que DOS puntos del mismo cluster esten a distancia
+    Clustering SIN centros: X[i,k] = 1 si el punto i va al cluster k.
+
+      Objetivo 'SUMA': min sum_{i<j} dist[i][j] * Z[i,j]      (distancias dentro de grupos)
+      Objetivo 'MAX' : min Rmax                               (diametro maximo)
+      s.a. sum_k X[i,k] == 1                     para todo i
+           sum_i X[i,k] >= 1                     para todo k  (clusters no vacios)
+           Z[i,j] >= X[i,k] + X[j,k] - 1         para i<j, todo k     ('SUMA')
+           Rmax >= dist[i][j]*(X[i,k] + X[j,k] - 1)  para i<j, todo k ('MAX')
+           sum_i q[i] X[i,k] <= Q                para todo k  (opcional)
+           X[i,k] == 0 si k > i                  (ruptura de simetria)
+
+    Z puede ser continua: al minimizar, toma 0 o 1 por si sola.
+    """
+    n = len(dist)
+    V = range(n)
+    Kset = range(K)
+    q = q if q is not None else [1] * n
+    md = gp.Model("pares")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    X = md.addVars(n, K, vtype=GRB.BINARY, name="X")
+    Z = md.addVars([(i, j) for i in V for j in V if i < j], lb=0, name="Z")
+    Rmax = md.addVar(lb=0, name="Rmax")
+
+    md.addConstrs((gp.quicksum(X[i, k] for k in Kset) == 1 for i in V), name="un_cluster")
+    md.addConstrs((gp.quicksum(X[i, k] for i in V) >= 1 for k in Kset), name="cluster_no_vacio")
+    md.addConstrs((X[i, k] == 0 for i in V for k in Kset if k > i), name="simetria")
+    if Q is not None:
+        md.addConstrs((gp.quicksum(q[i] * X[i, k] for i in V) <= Q for k in Kset), name="cap_max")
+    if objetivo == "SUMA":
+        md.addConstrs((Z[i, j] >= X[i, k] + X[j, k] - 1
+                       for i in V for j in V if i < j for k in Kset), name="mismo_cluster")
+        md.setObjective(gp.quicksum(dist[i][j] * Z[i, j] for i in V for j in V if i < j), GRB.MINIMIZE)
+    else:
+        md.addConstrs((Rmax >= dist[i][j] * (X[i, k] + X[j, k] - 1)
+                       for i in V for j in V if i < j for k in Kset), name="def_Rmax")
+        md.setObjective(Rmax, GRB.MINIMIZE)
+    return md, X
+
+
+def ej_pares(K=3, objetivo="SUMA"):
+    """5.5 CLUSTERING por pares (sin centros): suma de distancias o diametro maximo."""
+    pts = generar_puntos(n_por_grupo=(6, 6, 6))
+    dist = matriz_distancias(pts)
+    md, X = modelo_pares(dist, K, objetivo)
+    md.optimize()
+    print(f"[pares/{objetivo}] n={len(pts)}, K={K}, obj={md.ObjVal:.2f}")
+    for k in range(K):
+        print(f"  cluster {k}: {[i for i in range(len(pts)) if X[i, k].X > 0.5]}")
+    return md
+
+
+# ---------------------------- 5.6 MIN #CLUSTERS CON DIAMETRO MAXIMO ----------
+def modelo_min_clusters_diametro(dist, D, K_max):
+    """
+    No se conoce K. Se exige que DOS puntos del mismo cluster esten a distancia
     <= D, y se minimiza el numero de clusters usados.  (Es un coloreo de grafos.)
 
-      x[i,c] = 1 si el punto i va al cluster c ;  u[c] = 1 si el cluster c se usa
-      min  sum_c u[c]
-      s.a. sum_c x[i,c] == 1                  para todo i
-           x[i,c] <= u[c]                     para todo i,c
-           x[i,c] + x[j,c] <= 1               para todo c y pares i<j con d[i,j] > D
-           x[i,c] == 0  si c > i              (ruptura de simetria, opcional)
+      X[i,k] = 1 si el punto i va al cluster k ;  U[k] = 1 si el cluster k se usa
+      min  sum_k U[k]
+      s.a. sum_k X[i,k] == 1                  para todo i
+           X[i,k] <= U[k]                     para todo i,k
+           X[i,k] + X[j,k] <= 1               para todo k y pares i<j con dist[i][j] > D
+           X[i,k] == 0  si k > i              (ruptura de simetria, opcional)
 
-    K_max = cota superior de clusters posibles (basta con un valor razonable).
+    K_max = cota superior de clusters posibles.
     """
-    n = len(d)
-    C = range(K_max)
-    m = gp.Model("min_clusters")
-    m.Params.OutputFlag = 0
-    x = m.addVars(n, K_max, vtype=GRB.BINARY, name="x")
-    u = m.addVars(K_max, vtype=GRB.BINARY, name="u")
-    m.setObjective(u.sum(), GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") == 1 for i in range(n)), name="un_cluster")
-    m.addConstrs((x[i, c] <= u[c] for i in range(n) for c in C), name="uso")
-    for i in range(n):
-        for j in range(i + 1, n):
-            if d[i][j] > D:                                 # incompatibles
-                for c in C:
-                    m.addConstr(x[i, c] + x[j, c] <= 1)
-    # Ruptura de simetria: el punto i solo puede estar en clusters con indice <= i
-    for i in range(n):
-        for c in C:
-            if c > i:
-                x[i, c].UB = 0
-    return m, x, u
+    n = len(dist)
+    V = range(n)
+    Kset = range(K_max)
+    md = gp.Model("min_clusters")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    X = md.addVars(n, K_max, vtype=GRB.BINARY, name="X")
+    U = md.addVars(K_max, vtype=GRB.BINARY, name="U")
+    md.setObjective(gp.quicksum(U[k] for k in Kset), GRB.MINIMIZE)
+    md.addConstrs((gp.quicksum(X[i, k] for k in Kset) == 1 for i in V), name="un_cluster")
+    md.addConstrs((X[i, k] <= U[k] for i in V for k in Kset), name="uso")
+    md.addConstrs((X[i, k] + X[j, k] <= 1
+                   for i in V for j in V if i < j and dist[i][j] > D for k in Kset),
+                  name="incompatibles")
+    md.addConstrs((X[i, k] == 0 for i in V for k in Kset if k > i), name="simetria")
+    return md, X, U
 
 
 def ej_min_clusters_diametro(D=3.5, K_max=6):
-    """5.5 CLUSTERING: minimo de clusters con diametro maximo D."""
+    """5.6 CLUSTERING: minimo de clusters con diametro maximo D."""
     pts = generar_puntos(n_por_grupo=(5, 5, 5))
-    d = matriz_distancias(pts)
-    m, x, u = modelo_min_clusters_diametro(d, D, K_max)
-    m.optimize()
-    if m.status != GRB.OPTIMAL:
-        print("status =", m.status, "-> subir K_max o D")
-        return m
-    print(f"[min clusters] D={D}: se necesitan {m.ObjVal:.0f} clusters")
-    for c in range(K_max):
-        miembros = [i for i in range(len(pts)) if x[i, c].X > 0.5]
+    dist = matriz_distancias(pts)
+    md, X, U = modelo_min_clusters_diametro(dist, D, K_max)
+    md.optimize()
+    if md.status != GRB.OPTIMAL:
+        print("status =", md.status, "-> subir K_max o D")
+        return md
+    print(f"[min clusters] D={D}: se necesitan {md.ObjVal:.0f} clusters")
+    for k in range(K_max):
+        miembros = [i for i in range(len(pts)) if X[i, k].X > 0.5]
         if miembros:
-            diam = max((d[i][j] for i in miembros for j in miembros), default=0)
-            print(f"  cluster {c}: {miembros} | diametro real = {diam:.2f}")
-    return m
+            diam = max((dist[i][j] for i in miembros for j in miembros), default=0)
+            print(f"  cluster {k}: {miembros} | diametro real = {diam:.2f}")
+    return md
 
 
-# ---------------------------- 5.6 ASIGNAR A CENTROIDES DADOS -----------------
+# ---------------------------- 5.7 ASIGNAR A CENTROIDES DADOS -----------------
 def ej_asignar_a_centroides():
-    """
-    Si los centros YA estan dados (por ejemplo, centroides de un k-means),
-    ya no hay variable y: es un problema de asignacion/transporte (LP puro).
-    Con capacidad por cluster para balancear:
-
-      min  sum_{i,k} d(p_i, c_k) * x[i,k]
-      s.a. sum_k x[i,k] == 1 ;  sum_i x[i,k] <= cap[k] ;  x >= 0
-    """
+    """5.7 CLUSTERING con centros dados: asignacion con capacidad (LP puro)."""
+    # Si los centros YA estan dados (por ejemplo, centroides de un k-means),
+    # ya no hay variable Y: es un problema de asignacion/transporte.
+    #   min  sum_{i,k} dist(p_i, c_k) * X[i,k]
+    #   s.a. sum_k X[i,k] == 1 ;  sum_i q[i] X[i,k] <= Q ;  X >= 0
     pts = generar_puntos()
     centroides = [(2, 2), (8, 3), (5, 9)]
-    cap = [9, 9, 9]
-    K = range(len(centroides))
-    d = [[distancia(p, c) for c in centroides] for p in pts]
+    n, K = len(pts), len(centroides)
+    V, Kset = range(n), range(K)
+    q = [1] * n
+    Q = 9
+    dist = [[distancia(p, c) for c in centroides] for p in pts]   # dist[i][k]
 
-    m = gp.Model("asignar_centroides")
-    m.Params.OutputFlag = 0
-    x = m.addVars(len(pts), K, lb=0, ub=1, name="x")       # continua: sale entera
-    m.setObjective(gp.quicksum(d[i][k] * x[i, k] for i in range(len(pts)) for k in K),
-                   GRB.MINIMIZE)
-    m.addConstrs((x.sum(i, "*") == 1 for i in range(len(pts))), name="un_cluster")
-    m.addConstrs((x.sum("*", k) <= cap[k] for k in K), name="cap")
-    m.optimize()
-    print(f"[asignacion a centroides] obj={m.ObjVal:.2f}")
-    for k in K:
-        print(f"  centroide {centroides[k]}: {sum(1 for i in range(len(pts)) if x[i, k].X > 0.5)} puntos")
-    return m
+    md = gp.Model("asignar_centroides")
+    md.setParam(GRB.Param.OutputFlag, 0)
+    X = md.addVars(n, K, lb=0, ub=1, name="X")             # continua: sale entera
+    md.setObjective(gp.quicksum(dist[i][k] * X[i, k] for i in V for k in Kset), GRB.MINIMIZE)
+    md.addConstrs((gp.quicksum(X[i, k] for k in Kset) == 1 for i in V), name="un_cluster")
+    md.addConstrs((gp.quicksum(q[i] * X[i, k] for i in V) <= Q for k in Kset), name="cap")
+    md.optimize()
+    print(f"[asignacion a centroides] obj={md.ObjVal:.2f}")
+    for k in Kset:
+        print(f"  centroide {centroides[k]}: {sum(1 for i in V if X[i, k].X > 0.5)} puntos")
+    return md
 
 
-# ---------------------------- 5.7 K-MEANS NO ES UN MIP -----------------------
+# ---------------------------- 5.8 BARRIDO DE K (METODO DEL CODO) -------------
+def ej_barrido_k(K_max=7):
+    """5.8 Como elegir K: resolver la p-mediana para K = 1..K_max y mirar el codo."""
+    pts = generar_puntos()
+    dist = matriz_distancias(pts)
+    print("  K   objetivo   mejora")
+    anterior = None
+    for K in range(1, K_max + 1):
+        md, X, Y = modelo_p_mediana(dist, K)
+        md.optimize()
+        mejora = "" if anterior is None else f"{anterior - md.ObjVal:8.2f}"
+        print(f"  {K}  {md.ObjVal:9.2f}  {mejora}")
+        anterior = md.ObjVal
+    print("  (el 'codo' es donde la mejora deja de ser grande; aqui deberia ser K = 3)")
+
+
+# ---------------------------- 5.9 K-MEANS NO ES UN MIP -----------------------
 def nota_kmeans():
     """
     k-means usa CENTROIDES = promedios (continuos, no son puntos del conjunto):
-        min  sum_i sum_k x[i,k] * ||p_i - c_k||^2     con c_k variable.
-    El producto x[i,k]*c_k (binaria * continua) al cuadrado es NO CONVEXO:
+        min  sum_i sum_k X[i,k] * ||p_i - c_k||^2     con c_k variable.
+    El producto X[i,k]*c_k (binaria * continua) al cuadrado es NO CONVEXO:
     no es un LP ni un MIP. Opciones aceptables en un examen:
 
       1) Usar p-mediana/k-medoids (5.2): el centro es uno de los puntos.
-      2) Fijar los centroides y asignar (5.6), iterar a mano (algoritmo de Lloyd):
+      2) Fijar los centroides y asignar (5.7), iterar a mano (algoritmo de Lloyd):
              repetir: asignar (LP) -> recalcular centroides (promedio) -> hasta converger.
       3) Si hay que dejar los centroides como variable, Gurobi acepta modelos
-         no convexos con  m.Params.NonConvex = 2  (lento, solo instancias chicas).
+         no convexos con  md.setParam(GRB.Param.NonConvex, 2)  (lento, solo instancias chicas).
       4) Con distancia Manhattan, el centroide optimo es la MEDIANA por
          coordenada, y la distancia |p - c| se linealiza con la tecnica (a)
          de la PARTE 3.
@@ -936,11 +1060,11 @@ ERRORES FRECUENTES
 CONSEJOS PARA EL EXAMEN
   * Escribir primero conjuntos, parametros, variables, objetivo, restricciones
     (como comentarios) y luego codificar.
-  * Hacer m.write("modelo.lp") y leerlo: ahi se ve el modelo tal cual lo entiende Gurobi.
+  * Hacer md.write("modelo.lp") y leerlo: ahi se ve el modelo tal cual lo entiende Gurobi.
   * Probar primero con datos chicos; verificar la solucion a mano.
   * Si pide interpretar: precio sombra (Pi), holgura (Slack), costo reducido (RC).
-  * Si el modelo tarda: m.Params.TimeLimit y m.Params.MIPGap.
-  * m.Params.OutputFlag = 0 para ocultar el log; 1 para ver nodos, gap, cotas.
+  * Si el modelo tarda: md.setParam(GRB.Param.TimeLimit, 60) y GRB.Param.MIPGap.
+  * md.setParam(GRB.Param.OutputFlag, 0) para ocultar el log; 1 para ver nodos, gap, cotas.
   * Status utiles: 2 OPTIMAL, 3 INFEASIBLE, 5 UNBOUNDED, 9 TIME_LIMIT.
 """
 
@@ -970,8 +1094,10 @@ EJEMPLOS = {
     "p_mediana": ej_p_mediana,
     "p_mediana_cap": ej_p_mediana_capacitada,
     "p_centro": ej_p_centro,
+    "pares": ej_pares,
     "min_clusters": ej_min_clusters_diametro,
     "asignar_centroides": ej_asignar_a_centroides,
+    "barrido_k": ej_barrido_k,
     "kmeans": nota_kmeans,
     "checklist": checklist,
 }
