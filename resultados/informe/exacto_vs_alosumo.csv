@@ -1,0 +1,7 @@
+instancia,p,exacto_estado,exacto_abiertos,exacto_distancia,exacto_equipos,alosumo_estado,alosumo_abiertos,alosumo_distancia,alosumo_equipos,alosumo_tiempo_s,exacto_tiempo_s
+A,4,OPTIMAL,4,1096.56,16,OPTIMAL,4,1096.56,16,0.472,0.53
+A,7,OPTIMAL,7,913.05,23,OPTIMAL,7,913.05,20,0.043,0.045
+A,10,OPTIMAL,10,951.39,25,OPTIMAL,8,893.82,23,0.037,2.515
+B,7,OPTIMAL,7,1206.01,26,OPTIMAL,7,1206.01,27,26.903,8.776
+B,9,OPTIMAL,9,1042.58,33,OPTIMAL,9,1042.58,33,2.206,1.552
+B,10,OPTIMAL,10,1035.88,33,OPTIMAL,10,1035.88,34,1.57,1.478

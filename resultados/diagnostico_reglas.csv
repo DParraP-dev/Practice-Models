@@ -1,0 +1,25 @@
+prueba,instancia,p,variante,estado,distancia
+6a,A,3,completo,INFEASIBLE,
+6a,A,3,sin R3 ni R4,INFEASIBLE,
+6a,A,3,demanda divisible agrupada por nodo,INFEASIBLE,
+6a,A,4,completo,OPTIMAL,1096.56
+6a,A,4,sin R3 ni R4,OPTIMAL,1096.56
+6a,A,4,demanda divisible agrupada por nodo,OPTIMAL,1089.44
+6a,B,5,completo,INFEASIBLE,
+6a,B,5,sin R3 ni R4,INFEASIBLE,
+6a,B,5,demanda divisible agrupada por nodo,INFEASIBLE,
+6a,B,6,completo,INFEASIBLE,
+6a,B,6,sin R3 ni R4,INFEASIBLE,
+6a,B,6,demanda divisible agrupada por nodo,INFEASIBLE,
+6a,B,7,completo,OPTIMAL,1206.01
+6a,B,7,sin R3 ni R4,OPTIMAL,1206.01
+6a,B,7,demanda divisible agrupada por nodo,OPTIMAL,1113.98
+6b,A,8,completo,OPTIMAL,893.82
+6b,A,8,sin R3,OPTIMAL,893.82
+6b,A,8,sin R4,OPTIMAL,893.82
+6b,A,9,completo,OPTIMAL,908.08
+6b,A,9,sin R3,OPTIMAL,893.82
+6b,A,9,sin R4,OPTIMAL,893.82
+6b,A,10,completo,OPTIMAL,951.39
+6b,A,10,sin R3,OPTIMAL,893.82
+6b,A,10,sin R4,OPTIMAL,893.82
