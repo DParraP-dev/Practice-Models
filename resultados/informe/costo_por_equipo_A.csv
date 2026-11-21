@@ -1,0 +1,12 @@
+instancia,p,equipos,distancia,run_id,estado,equipos_S1,equipos_S2,equipos_S3,equipos_S4,dist_extra_por_equipo_reducido
+A,4,14,2088.75,A_c_eps_p4_eps14,OPTIMAL,4,4,3,3,950.75
+A,4,15,1138,A_c_eps_p4_eps15,OPTIMAL,3,4,4,4,41.44
+A,4,16,1096.56,A_a_dist_p4,OPTIMAL,4,4,4,4,
+A,7,15,1014.75,A_c_eps_p7_eps15,OPTIMAL,3,4,4,4,101.62
+A,7,16,913.13,A_c_eps_p7_eps16,OPTIMAL,4,4,4,4,0.04
+A,7,18,913.05,A_c_eps_p7_eps18,OPTIMAL,4,5,5,4,
+A,10,15,1233.12,A_c_eps_p10_eps15,TIME_LIMIT,3,4,4,4,263.84
+A,10,16,969.28,A_c_eps_p10_eps16,OPTIMAL,4,4,4,4,9.48
+A,10,17,959.8,A_c_eps_p10_eps17,OPTIMAL,4,4,5,4,4.13
+A,10,18,955.67,A_c_eps_p10_eps18,OPTIMAL,4,5,5,4,4.28
+A,10,19,951.39,A_c_eps_p10_eps19,OPTIMAL,4,5,5,5,
