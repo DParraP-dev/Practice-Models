@@ -1,0 +1,16 @@
+{
+  "gurobi_version": "13.0.3",
+  "python_version": "3.14.2",
+  "os": "Windows-11-10.0.26300-SP0",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 142 Stepping 12, GenuineIntel",
+  "logical_cpus": 8,
+  "time_limit_s": 1800,
+  "mip_gap": 0.0,
+  "threads_param": 0,
+  "screen_time_limit_s": 60,
+  "date": "2026-11-20 03:18:55",
+  "physical_cpus": 4,
+  "ram_gb": 7.8,
+  "cpu_max_mhz": 2112.0
+}
