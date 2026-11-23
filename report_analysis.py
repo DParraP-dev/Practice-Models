@@ -42,14 +42,24 @@ en resultados/informe/:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INSTANCES = ["instance_A.json", "instance_B.json"]
 RESULTS_DIR = os.path.join(BASE_DIR, "resultados")
-RESULTS_CSV = os.path.join(RESULTS_DIR, "resultados.csv")
-SOLUTIONS_JSON = os.path.join(RESULTS_DIR, "soluciones.json")
-ENV_JSON = os.path.join(RESULTS_DIR, "entorno.json")
 OUT_DIR = os.path.join(RESULTS_DIR, "informe")
+
+
+def _find(fname):
+    """Busca el archivo en resultados/ y, si no está, en la carpeta del script."""
+    p = os.path.join(RESULTS_DIR, fname)
+    return p if os.path.exists(p) else os.path.join(BASE_DIR, fname)
+
+
+RESULTS_CSV = _find("resultados.csv")
+SOLUTIONS_JSON = _find("soluciones.json")
+ENV_JSON = _find("entorno.json")
 
 # Corridas para mapa de solución y calendario. None -> todas las corridas
 # "a_dist" con solución (una por cada p estudiado). Ejemplo: ["A_a_dist_p7"]
 SOLUTION_RUNS_TO_PLOT = None
+# Corridas adicionales que se grafican siempre (soluciones recomendadas)
+EXTRA_SOLUTION_RUNS = ["A_c_eps_p7_eps16", "B_c_eps_p9_eps27"]
 
 DPI = 150
 TOL = 1e-6
@@ -623,6 +633,7 @@ if __name__ == "__main__":
 
             to_plot = SOLUTION_RUNS_TO_PLOT or [r["run_id"] for r in rs
                                                 if r["experiment"] == "a_dist" and r["has_solution"]]
+            to_plot = list(to_plot) + [rid for rid in EXTRA_SOLUTION_RUNS if rid not in to_plot]
             by_id = {r["run_id"]: r for r in rs}
             for rid in to_plot:
                 if rid in sols and rid in by_id:
